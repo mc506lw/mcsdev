@@ -16,7 +16,7 @@
   "private": false,
   "repository": {
     "type": "git",
-    "url": "https://github.com/mc506lw/mcsdev.git"
+    "url": "git+https://github.com/mc506lw/mcsdev.git"
   },
   "homepage": "https://github.com/mc506lw/mcsdev",
   "bugs": {
