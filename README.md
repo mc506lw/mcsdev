@@ -2,6 +2,8 @@
 
 **Minecraft Server Dev** —— 终端里的插件开发者测试服环境。
 
+> GitHub 仓库：[mc506lw/mcsdev](https://github.com/mc506lw/mcsdev)
+
 > ⚠️ **当前为名称占位包（v0.0.1）**：本包仅用于在 npm 上保留 `mcsdev` 这个名字，**不包含任何功能**。安装后运行只会打印占位说明。CLI 正在开发中，首个功能版本会原地替换本包内容（包名保持不变）。
 
 ## 这是什么 / What is this
@@ -50,7 +52,7 @@ mcsdev
 - **v0.3**：`dev`（watch 自动构建 → 部署 → 重启）、Folia 兼容校验
 - **v0.4+**：`package`（实例打包复现 bug）、`mcsdev test`（集成测试）
 
-详细设计见仓库内 [`DESIGN.md`](./DESIGN.md)。
+详细设计见 [`DESIGN.md`](https://github.com/mc506lw/mcsdev/blob/main/DESIGN.md)。
 
 ## 许可证 / License
 

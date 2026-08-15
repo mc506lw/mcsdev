@@ -14,6 +14,14 @@
   ],
   "license": "MIT",
   "private": false,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mc506lw/mcsdev.git"
+  },
+  "homepage": "https://github.com/mc506lw/mcsdev",
+  "bugs": {
+    "url": "https://github.com/mc506lw/mcsdev/issues"
+  },
   "bin": {
     "mcsdev": "bin/mcsdev.js"
   },
