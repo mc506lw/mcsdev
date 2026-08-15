@@ -1,0 +1,31 @@
+{
+  "name": "mcsdev",
+  "version": "0.0.1",
+  "description": "Minecraft Server Dev —— 终端里的插件开发者测试服环境（名称占位包，CLI 开发中）",
+  "keywords": [
+    "minecraft",
+    "paper",
+    "folia",
+    "bukkit",
+    "plugin",
+    "developer",
+    "test-server",
+    "cli"
+  ],
+  "license": "MIT",
+  "private": false,
+  "bin": {
+    "mcsdev": "bin/mcsdev.js"
+  },
+  "files": [
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "prepublishOnly": "node -e \"console.log('[mcsdev] 占位包发布：仅用于保留 npm 名称，不含功能')\""
+  }
+}
