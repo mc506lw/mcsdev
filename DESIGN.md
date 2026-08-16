@@ -248,7 +248,7 @@ mcsdev run 1.20.1
 
 ### 5.6 `rebuild` 与生命周期
 
-- `mcsdev rebuild <实例>`：按实例配置重新生成 `server.properties` / `eula.txt` / 启动参数，幂等，不碰 world/ 与 plugins/；可选 `--restart`。
+- `mcsdev rebuild <实例>`：**二次替换**——把实例偏好**按键级合并**进服务器原生配置（`server.properties` 用键补丁、`bukkit.yml` 改 `settings.allow-end` 让禁末地真正生效），保留版本特有键（如 `accepts-transfers`）；文件缺失时播种；幂等，不碰 world/ 与 plugins/；可选 `--restart`。
 - 生命周期：`init（new 创建）→ run / start / stop / restart → reset → rm（删除，v0.2）`。
 
 ---
