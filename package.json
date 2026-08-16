@@ -1,39 +1,28 @@
 {
   "name": "mcsdev",
-  "version": "0.0.1",
-  "description": "Minecraft Server Dev —— 终端里的插件开发者测试服环境（名称占位包，CLI 开发中）",
-  "keywords": [
-    "minecraft",
-    "paper",
-    "folia",
-    "bukkit",
-    "plugin",
-    "developer",
-    "test-server",
-    "cli"
-  ],
+  "version": "0.1.0-dev",
+  "description": "Minecraft Server Dev — terminal test-server environment for Paper/Folia plugin developers (v0.1 prototype)",
+  "private": true,
   "license": "MIT",
-  "private": false,
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/mc506lw/mcsdev.git"
-  },
-  "homepage": "https://github.com/mc506lw/mcsdev",
-  "bugs": {
-    "url": "https://github.com/mc506lw/mcsdev/issues"
-  },
   "bin": {
-    "mcsdev": "bin/mcsdev.js"
-  },
-  "files": [
-    "bin",
-    "README.md",
-    "LICENSE"
-  ],
-  "engines": {
-    "node": ">=18"
+    "mcsdev": "dist/cli.js"
   },
   "scripts": {
-    "prepublishOnly": "node -e \"console.log('[mcsdev] 占位包发布：仅用于保留 npm 名称，不含功能')\""
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/cli.js",
+    "dev": "tsx src/cli.ts",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18.17"
   }
 }

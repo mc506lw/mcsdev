@@ -178,7 +178,7 @@ Minecraft 插件开发缺少一款"持续、方便地测试"的工具。开发�
 
 1. **JDK 自动扫描**（非交互）：扫描 `JAVA_HOME`、PATH、Windows `C:\Program Files\Java` 等、macOS `/Library/Java/JavaVirtualMachines` 与 Homebrew、Linux `/usr/lib/jvm`、SDKMAN、Gradle toolchain 缓存；结果写入 `~/.mcsdev/java.json`，列出全部发现并标注版本。
 2. **选择默认 JDK**：从扫描结果中选一个（建议：项目最常用版本）。
-3. **服务器根路径**：要求填写**空路径**（或建议默认 `~/mcsdev-servers`），所有实例创建于此。
+3. **服务器根路径**：要求填写**空路径**（默认建议 `<当前项目>/.tmp` —— 测试服实例的临时目录，gitignore），所有实例创建于此。
 4. **偏好（可全部跳过，有默认值）**：只问有安全含义的 **online-mode**；世界类型 / 维度等留默认，需要时在 `new` 或 `mcsdev config` 改。
 
 > 设计取舍：**偏好类问题懒问**——setup 时开发者往往还没有答案，一路回车会磨损第一印象。setup 只收环境事实，偏好默认值兜底。

@@ -34,8 +34,8 @@ npm 不支持"预订"包名，**只有发布之后才能真正持有这个名字
 | 项目 | 状态 |
 |---|---|
 | 设计文档 v2（`DESIGN.md`） | ✅ 已完成 |
-| v0.1（`setup` / `new` / `run` / `stop` / `logs` / `ls`） | 🚧 开发中 |
-| 首个功能版本发布 | ⏳ 待定 |
+| v0.1 源码（`setup` / `java` / `new` / `run` / `ls` / `start` / `stop` / `restart` / `logs` / `rebuild` / `reset`） | 🚧 TypeScript 原型已入库（见 `src/`）；测试服实例默认存放于各项目 `.tmp/` 目录 |
+| 首个功能版本发布（替换占位包） | ⏳ 待定 |
 
 ## 使用 / Usage
 
