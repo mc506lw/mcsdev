@@ -90,7 +90,9 @@ export async function runCmd(versionArg: string | undefined, opts: RunOptions = 
       }
     } else if (candidates.length === 1) {
       instName = candidates[0].name;
-      step(`使用实例 ${instName}`);
+      const c = candidates[0];
+      step(`使用实例 ${instName}（${c.core} ${c.mcVersion} · 端口 ${c.port}）`);
+      hint(`${c.dir}`);
     } else {
       const choices: Choice<string>[] = [
         ...candidates.map((c) => ({ value: c.name, label: c.name, hint: `${c.core} · 端口 ${c.port}` })),

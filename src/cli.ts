@@ -74,24 +74,24 @@ program
 
 program.command('ls').description('列出实例').action(wrap(lsCmd));
 
-program.command('start').description('启动实例').argument('<instance>').action(wrap(startCmd));
-program.command('stop').description('停止实例').argument('<instance>').action(wrap(stopCmd));
-program.command('restart').description('重启实例').argument('<instance>').action(wrap(restartCmd));
+program.command('start').description('启动实例（后台分离）').argument('[instance]', '实例名或 MC 版本（缺省时选择）').action(wrap(startCmd));
+program.command('stop').description('停止实例').argument('[instance]', '实例名或 MC 版本（缺省时选择）').action(wrap(stopCmd));
+program.command('restart').description('重启实例').argument('[instance]', '实例名或 MC 版本（缺省时选择）').action(wrap(restartCmd));
 program
   .command('logs')
   .description('查看实例日志')
-  .argument('[instance]', '缺省取正在运行的实例')
+  .argument('[instance]', '实例名或 MC 版本（缺省时选择）')
   .option('-f, --follow', '持续跟踪')
   .action(wrap(logsCmd));
 program
   .command('rebuild')
   .description('从实例配置重生成 server.properties / eula.txt')
-  .argument('<instance>')
+  .argument('[instance]', '实例名或 MC 版本（缺省时选择）')
   .action(wrap(rebuildCmd));
 program
   .command('reset')
   .description('重置实例（清 world/ 与日志）')
-  .argument('<instance>')
+  .argument('[instance]', '实例名或 MC 版本（缺省时选择）')
   .action(wrap(resetCmd));
 
 program.parseAsync(process.argv).catch((e: Error) => {

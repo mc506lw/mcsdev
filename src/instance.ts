@@ -72,7 +72,7 @@ export function buildServerProperties(prefs: Prefs, port: number): string {
     'require-resource-pack=false',
   ];
   if (!prefs.allowEnd) {
-    lines.push('# [mcsdev] allowEnd=false：server.properties 无法禁用末地，请用插件/数据包实现');
+    lines.push('# [mcsdev] allowEnd=false：原版 server.properties 无法禁用末地世界（1.20.x 限制），需用插件/数据包实现');
   }
   return lines.join('\n') + '\n';
 }

@@ -25,6 +25,12 @@ function askLine(question: string): Promise<string> {
     };
     // 管道/EOF 场景：静默结束返回空串，避免挂起；done 守卫保证不覆盖真实答案
     rl.on('close', () => finish(''));
+    // TTY 下 Ctrl+C 会被 readline 拦截成按键事件（不会触发进程级 SIGINT 默认退出）：
+    // 必须显式中止整个命令，否则会被当成"空输入"继续下一步
+    rl.on('SIGINT', () => {
+      console.log();
+      process.exit(130);
+    });
     rl.question(question, (ans) => {
       finish(ans.trim());
       rl.close();
