@@ -53,11 +53,10 @@ export async function setupCmd(): Promise<void> {
   cfg.root = root;
 
   // 3. 有安全含义的偏好：online-mode
-  const offline = await confirm('本地测试默认关闭 online-mode（离线登录，无需正版账号）？', !cfg.prefs.onlineMode);
+  info('online-mode：正版验证。开启后玩家必须用正版账号登录；本地开发测试一般关闭（离线）。');
+  hint('注意：offline 模式任何人都能进服，切勿用于公网服务器。');
+  const offline = await confirm('默认关闭正版验证（online-mode=false）？', !cfg.prefs.onlineMode);
   cfg.prefs.onlineMode = !offline;
-  if (!cfg.prefs.onlineMode) {
-    hint('离线模式仅适合本地开发测试，切勿用于公网服务器');
-  }
 
   saveConfig(cfg);
   console.log();

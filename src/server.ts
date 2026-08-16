@@ -66,6 +66,8 @@ export function javaBinFor(meta: InstanceMeta): string | undefined {
 export interface StartOptions {
   /** 是否把父进程 stdin 转给服务器（run 前台模式） */
   relayStdin?: boolean;
+  /** 后台分离模式（start/restart 用）：stdout/stderr 直接写 logs/latest.log，CLI 立即返回 */
+  detach?: boolean;
   /** 每个日志行回调（测试/二次处理用） */
   onLine?: (line: string) => void;
 }
@@ -151,44 +153,81 @@ export async function startServer(meta: InstanceMeta, opts: StartOptions = {}): 
   const args = ['-Xms' + mem, '-Xmx' + mem, '-Dfile.encoding=UTF-8', '-jar', 'server.jar', 'nogui'];
 
   info(`启动 ${meta.name}（${meta.core} ${meta.mcVersion}，PID 待定，内存 ${mem}）`);
-  const child = spawn(bin, args, { cwd: meta.dir, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: false });
+  // 后台分离：stdout/stderr 落到 logs/console.log（Paper 自带 logs/latest.log，避免同文件重复），
+    // 父进程不持有管道 → start 立即返回；detached 让子进程独立于父进程/控制台存活
+    let child: ChildProcess;
+    if (opts.detach) {
+      const logDir = path.join(meta.dir, 'logs');
+      ensureDir(logDir);
+      const logFd = fs.openSync(path.join(logDir, 'console.log'), 'a');
+      child = spawn(bin, args, {
+        cwd: meta.dir,
+        stdio: ['ignore', logFd, logFd],
+        windowsHide: false,
+        detached: true,
+      });
+  } else {
+    child = spawn(bin, args, { cwd: meta.dir, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: false });
+  }
 
   writeState({ ...readState(), [meta.name]: { pid: child.pid ?? 0, startedAt: Date.now() } });
   info(`Java：${bin}`);
 
-  const handler = makeLineHandler(meta, opts);
-  child.stdout?.on('data', handler);
-  child.stderr?.on('data', handler);
-
-  child.on('error', (e) => {
-    deleteState(meta.name);
-    error(`启动失败：${e.message}`);
-  });
-
-  child.on('close', (code, signal) => {
-    const wasRunning = runningPid(meta.name) !== null;
-    deleteState(meta.name);
-    if (code === 0) {
-      ok(`实例 ${meta.name} 已停止（exit 0）`);
-    } else if (!wasRunning) {
-      // 启动瞬间崩溃
-      error(`实例 ${meta.name} 启动失败（code=${code} signal=${signal}）`);
-      hint('常见原因：JDK 版本不符、server.jar 损坏、端口占用；详见上方日志提示');
-    } else {
-      error(`实例 ${meta.name} 异常退出（code=${code} signal=${signal}）`);
-    }
-  });
-
-  if (opts.relayStdin && process.stdin.isTTY) {
-    process.stdin.on('data', (d: Buffer) => {
-      try {
-        child.stdin?.write(d);
-      } catch {
-        /* 子进程已退出 */
+  if (opts.detach) {
+    child.on('close', (code, signal) => {
+      const wasRunning = runningPid(meta.name) !== null;
+      deleteState(meta.name);
+      if (code !== 0 && wasRunning) {
+        warn(`实例 ${meta.name} 已退出（code=${code} signal=${signal}）—— 详见 logs/latest.log`);
       }
     });
+    // 关键：不 unref 的话，子进程存活期间会持有进程句柄，父进程（CLI）无法退出 —— start 就会挂住
+    child.unref();
+  } else {
+    const handler = makeLineHandler(meta, opts);
+    child.stdout?.on('data', handler);
+    child.stderr?.on('data', handler);
+
+    child.on('error', (e) => {
+      deleteState(meta.name);
+      error(`启动失败：${e.message}`);
+    });
+
+    child.on('close', (code, signal) => {
+      const wasRunning = runningPid(meta.name) !== null;
+      deleteState(meta.name);
+      if (code === 0) {
+        ok(`实例 ${meta.name} 已停止（exit 0）`);
+      } else if (!wasRunning) {
+        // 启动瞬间崩溃
+        error(`实例 ${meta.name} 启动失败（code=${code} signal=${signal}）`);
+        hint('常见原因：JDK 版本不符、server.jar 损坏、端口占用；详见上方日志提示');
+      } else {
+        error(`实例 ${meta.name} 异常退出（code=${code} signal=${signal}）`);
+      }
+    });
+
+    if (opts.relayStdin && process.stdin.isTTY) {
+      process.stdin.on('data', (d: Buffer) => {
+        try {
+          child.stdin?.write(d);
+        } catch {
+          /* 子进程已退出 */
+        }
+      });
+    }
   }
+
   return { child, meta };
+}
+
+/** 前台会话的优雅停止钩子（run 等待期间注册，Ctrl+C 全局处理用） */
+let activeStopFn: (() => Promise<void>) | null = null;
+export function setActiveStop(fn: (() => Promise<void>) | null): void {
+  activeStopFn = fn;
+}
+export function getActiveStop(): (() => Promise<void>) | null {
+  return activeStopFn;
 }
 
 /** 同一进程内优雅停止：stdin 发 stop → 超时强杀进程树 */

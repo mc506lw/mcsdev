@@ -4,7 +4,7 @@ import { byVersion, getInstance } from '../registry';
 import { forgetVersion, getMemory, setMemory, stampsOfJars } from '../memory';
 import { findProject } from '../probe';
 import { compareVersions, fetchVersions } from '../paper';
-import { ServerHandle, startServer, stopServerExternal, runningPid, gracefulStopHandle } from '../server';
+import { ServerHandle, startServer, stopServerExternal, runningPid, gracefulStopHandle, setActiveStop } from '../server';
 import { atomicCopy, exists } from '../util/fsx';
 import { error, hint, ok, step, warn } from '../util/log';
 import { confirm, select, Choice } from '../ui/prompts';
@@ -146,21 +146,19 @@ export async function runCmd(versionArg: string | undefined, opts: RunOptions = 
   const handle = await startServer(inst, { relayStdin: true });
   ok(`实例 ${inst.name} 已启动：控制台输入 stop 可优雅停止；Ctrl+C 中断并强制停止`);
 
-  // 9. 前台等待直到子进程退出或 Ctrl+C
-  await waitForExit(handle);
+  // 9. 前台等待直到子进程退出；注册优雅停止钩子供全局 Ctrl+C 使用
+  setActiveStop(() => gracefulStopHandle(handle));
+  try {
+    await waitForExit(handle);
+  } finally {
+    setActiveStop(null);
+  }
   ok('run 会话结束');
 }
 
-/** 前台等待：子进程自然退出，或 SIGINT/SIGTERM 时优雅停止 */
-export async function waitForExit(handle: ServerHandle): Promise<void> {
-  await new Promise<void>((resolve) => {
+/** 前台等待：子进程自然退出（Ctrl+C 由 cli.ts 全局处理器负责） */
+export function waitForExit(handle: ServerHandle): Promise<void> {
+  return new Promise((resolve) => {
     handle.child.once('close', () => resolve());
-    const onSig = (): void => {
-      console.log();
-      warn('收到中断，正在停止服务器…');
-      void gracefulStopHandle(handle).then(() => resolve());
-    };
-    process.on('SIGINT', onSig);
-    process.on('SIGTERM', onSig);
   });
 }

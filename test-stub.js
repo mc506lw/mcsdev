@@ -1,56 +1,60 @@
-// 本地桩服务器：模拟 PaperMC API v2（用于本机无法连接 papermc.io 时的端到端冒烟测试）
-// 用法：node test-stub.js <port>
+// 本地桩服务器：模拟 PaperMC Fill API v3（本机连不上 fill.papermc.io 时的离线冒烟测试）
+// 用法：node test-stub.js <port>   （默认 18765）
+// 然后：$env:MCSDEV_PAPER_BASE = "http://127.0.0.1:<port>" 指向本桩
 const http = require('http');
 const crypto = require('crypto');
 
 const port = parseInt(process.argv[2] || '18765', 10);
+const base = process.env.MCSDEV_PAPER_BASE || `http://127.0.0.1:${port}`;
 
 // 假 server.jar 内容（不是合法 zip —— 用于验证"启动即失败"的错误处理路径）
 const fakeJar = Buffer.from('mcsdev smoke test: this is NOT a valid jar file\n');
 const sha256 = crypto.createHash('sha256').update(fakeJar).digest('hex');
 
-const routes = (pathname) => {
-  const p = pathname;
-  if (p === '/v2/projects/paper') {
-    return { project_id: 'paper', project_name: 'Paper', version_groups: ['1.20'], versions: ['1.20.1'] };
-  }
-  if (p === '/v2/projects/folia') {
-    return { project_id: 'folia', project_name: 'Folia', version_groups: ['1.20'], versions: ['1.20.1'] };
-  }
-  const latest = p.match(/^\/v2\/projects\/(paper|folia)\/versions\/([^/]+)\/builds\/latest$/);
-  if (latest) {
-    return {
-      project_id: latest[1],
-      project_name: latest[1] === 'paper' ? 'Paper' : 'Folia',
-      version: latest[2],
-      build: 99,
-      downloads: { application: { name: `${latest[1]}-${latest[2]}-99.jar`, sha256 } },
-    };
-  }
-  const dl = p.match(/^\/v2\/projects\/(paper|folia)\/versions\/([^/]+)\/builds\/(\d+)\/downloads\/(.+)$/);
-  if (dl) {
-    return { __raw: fakeJar, __type: 'application/octet-stream', __name: dl[4] };
-  }
-  return null;
-};
+const versions = ['1.21.6', '1.21.5', '1.21.4', '1.21.3', '1.20.1'];
+const ver = (id) => ({
+  version: {
+    id,
+    java: { version: { minimum: 21 }, flags: { recommended: ['-XX:+UseG1GC'] } },
+    support: { status: 'SUPPORTED', end: null },
+  },
+  builds: [100, 99],
+});
+const latestBuild = (core, v) => ({
+  id: 100,
+  channel: 'STABLE',
+  time: '2025-06-30T09:49:31Z',
+  commits: [],
+  downloads: {
+    'server:default': {
+      name: `${core}-${v}-100.jar`,
+      size: fakeJar.length,
+      url: `${base}/dl/${core}-${v}-100.jar`,
+      checksums: { sha256 },
+    },
+  },
+});
 
 http
   .createServer((req, res) => {
-    const url = new URL(req.url, 'http://localhost');
-    const hit = routes(url.pathname);
-    if (!hit) {
-      res.writeHead(404);
-      res.end('not found');
+    const p = new URL(req.url, 'http://localhost').pathname;
+    const json = (obj) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(obj));
+    };
+    if (p === '/v3/projects/paper/versions') return json(versions.map(ver));
+    if (p === '/v3/projects/folia/versions') return json(versions.map(ver));
+    const latest = p.match(/^\/v3\/projects\/(paper|folia)\/versions\/([^/]+)\/builds\/latest$/);
+    if (latest) return json(latestBuild(latest[1], latest[2]));
+    const dl = p.match(/^\/dl\/(.+)$/);
+    if (dl) {
+      res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': fakeJar.length });
+      res.end(fakeJar);
       return;
     }
-    if (hit.__raw) {
-      res.writeHead(200, { 'content-type': hit.__type, 'content-length': hit.__raw.length });
-      res.end(hit.__raw);
-      return;
-    }
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(hit));
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ ok: false, error: 'not_found', message: 'no such path' }));
   })
   .listen(port, '127.0.0.1', () => {
-    console.log(`stub PaperMC API listening on http://127.0.0.1:${port}`);
+    console.log(`stub Fill API v3 listening on http://127.0.0.1:${port} (MCSDEV_PAPER_BASE=${base})`);
   });

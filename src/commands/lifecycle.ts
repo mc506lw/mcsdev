@@ -2,11 +2,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { resetInstance, rebuildInstance } from '../instance';
 import { getInstance, listInstances } from '../registry';
-import { runningPid, startServer, stopServerExternal, ServerHandle } from '../server';
+import { runningPid, startServer, stopServerExternal } from '../server';
 import { error, ok, warn, hint } from '../util/log';
 import { exists } from '../util/fsx';
 import { confirm } from '../ui/prompts';
-import { waitForExit } from './run';
 
 /** 生命周期命令：start / stop / restart / logs / rebuild / reset */
 
@@ -16,9 +15,8 @@ export async function startCmd(name: string): Promise<void> {
     error(`实例不存在：${name}`);
     return;
   }
-  const handle = await startServer(inst, { relayStdin: true });
-  ok(`实例 ${name} 已启动：输入 stop 优雅停止，Ctrl+C 中断`);
-  await waitForExit(handle);
+  await startServer(inst, { detach: true });
+  ok(`实例 ${name} 已在后台启动（日志：mcsdev logs ${name}；停止：mcsdev stop ${name}）`);
 }
 
 export async function stopCmd(name: string): Promise<void> {
@@ -37,9 +35,8 @@ export async function restartCmd(name: string): Promise<void> {
     return;
   }
   await stopServerExternal(inst);
-  const handle = await startServer(inst, { relayStdin: true });
-  ok(`实例 ${name} 已重启`);
-  await waitForExit(handle);
+  await startServer(inst, { detach: true });
+  ok(`实例 ${name} 已重启（日志：mcsdev logs ${name}）`);
 }
 
 export async function logsCmd(name: string | undefined, opts: { follow?: boolean }): Promise<void> {

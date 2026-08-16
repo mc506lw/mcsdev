@@ -1,12 +1,20 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { atomicCopy, ensureDir, exists, mcsdevHome } from './util/fsx';
+import { info, warn } from './util/log';
 
 /**
- * Paper / Folia Downloads API v2 客户端。
- * 本机连不上 papermc.io 时可用 MCSDEV_PAPER_BASE 指向镜像或本地桩服务器（测试用）。
+ * PaperMC Downloads API v3 客户端（"Fill"：https://fill.papermc.io）。
+ * v2 (api.papermc.io/v2) 已 410 下线，v3 路径均以 /v3/ 开头；
+ * 下载 URL 由 API 直接给出（fill-data.papermc.io CDN）。
+ * 本机连不上时可用 MCSDEV_PAPER_BASE 指向镜像或本地桩服务器（测试用）。
+ * 缓存（~/.mcsdev/cache/）：
+ *   versions-{core}/list.json   版本列表，TTL 6h
+ *   builds/{core}-{version}.json 最新构建信息，TTL 4h
+ *   jars/{core}-{version}-{build}.jar  server.jar 文件缓存，实例从这里复制
  */
-const BASE = process.env.MCSDEV_PAPER_BASE || 'https://api.papermc.io/v2';
+const BASE = (process.env.MCSDEV_PAPER_BASE || 'https://fill.papermc.io').replace(/\/+$/, '');
 
 export const CORES = ['paper', 'folia'] as const;
 export type Core = (typeof CORES)[number];
@@ -15,7 +23,21 @@ export interface BuildInfo {
   build: number;
   jarName: string;
   sha256?: string;
+  downloadUrl: string;
+  channel?: string;
+  size?: number;
 }
+
+interface V3BuildResponse {
+  id?: number;
+  channel?: string;
+  time?: string;
+  downloads?: Record<string, { name?: string; size?: number; url?: string; checksums?: { sha256?: string } }>;
+}
+
+type V3VersionsBody =
+  | Array<{ version?: { id?: string }; builds?: number[] }>
+  | { versions?: Array<{ version?: { id?: string }; builds?: number[] }> };
 
 async function fetchJson<T>(url: string): Promise<T> {
   let res: Response;
@@ -23,35 +45,124 @@ async function fetchJson<T>(url: string): Promise<T> {
     res = await fetch(url, { signal: AbortSignal.timeout(20000) });
   } catch {
     throw new Error(
-      `无法连接 PaperMC API（${BASE}）—— 请检查网络/代理；本机无法直连时可用环境变量 MCSDEV_PAPER_BASE 指向镜像或代理`
+      `无法连接 PaperMC API（${BASE}）—— 请检查网络/代理；可用环境变量 MCSDEV_PAPER_BASE 指向镜像或代理`
     );
   }
   if (!res.ok) {
+    if (res.status === 410) {
+      throw new Error(`PaperMC API 版本已下线（HTTP 410，${url}）—— 请升级 mcsdev 或检查 MCSDEV_PAPER_BASE`);
+    }
     throw new Error(`PaperMC API 请求失败（HTTP ${res.status}）：${url}`);
   }
   return (await res.json()) as T;
 }
 
-/** 获取某核心的全部可用版本（如 paper 的 1.8.8 ... 1.21.x） */
+/* ---------- 缓存（~/.mcsdev/cache/） ---------- */
+
+const VERSIONS_TTL = 6 * 60 * 60 * 1000; // 6 小时
+const BUILD_TTL = 4 * 60 * 60 * 1000; // 4 小时
+
+function cachePath(kind: string, key: string): string {
+  return path.join(mcsdevHome(), 'cache', kind, `${key}.json`);
+}
+
+function readCache<T>(kind: string, key: string, ttlMs: number | null): T | undefined {
+  try {
+    const raw = JSON.parse(fs.readFileSync(cachePath(kind, key), 'utf8')) as { fetchedAt: number; data: T };
+    if (ttlMs === null || Date.now() - raw.fetchedAt <= ttlMs) return raw.data;
+  } catch {
+    /* 无缓存/损坏 */
+  }
+  return undefined;
+}
+
+function writeCache<T>(kind: string, key: string, data: T): void {
+  try {
+    ensureDir(path.dirname(cachePath(kind, key)));
+    fs.writeFileSync(cachePath(kind, key), JSON.stringify({ fetchedAt: Date.now(), data }), 'utf8');
+  } catch {
+    /* 缓存写失败不影响主流程 */
+  }
+}
+
+function sha256OfFile(file: string): string | null {
+  try {
+    return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+  } catch {
+    return null;
+  }
+}
+
+/* ---------- 元数据 ---------- */
+
+/** 获取某核心的全部可用版本（如 paper 的 1.8.8 ... 1.21.x），带 6h 缓存 */
 export async function fetchVersions(core: Core): Promise<string[]> {
-  const data = await fetchJson<{ versions?: string[] }>(`${BASE}/projects/${core}`);
-  return data.versions ?? [];
+  const kind = `versions-${core}`;
+  const cached = readCache<string[]>(kind, 'list', VERSIONS_TTL);
+  if (cached) return cached;
+  try {
+    const body = await fetchJson<V3VersionsBody>(`${BASE}/v3/projects/${core}/versions`);
+    const list = (Array.isArray(body) ? body : body.versions ?? [])
+      .map((v) => v.version?.id)
+      .filter((x): x is string => !!x);
+    writeCache(kind, 'list', list);
+    return list;
+  } catch (e) {
+    const stale = readCache<string[]>(kind, 'list', null);
+    if (stale) {
+      warn('PaperMC API 不可用，使用缓存的版本列表');
+      return stale;
+    }
+    throw e;
+  }
 }
 
-/** 获取某版本的最新构建信息（build 号 / jar 文件名 / sha256） */
+/** 获取某版本的最新构建信息（build 号 / jar 名 / sha256 / 下载 URL），带 4h 缓存 */
 export async function fetchLatestBuild(core: Core, version: string): Promise<BuildInfo | null> {
-  const data = await fetchJson<{
-    build?: number;
-    downloads?: { application?: { name?: string; sha256?: string } };
-  }>(`${BASE}/projects/${core}/versions/${encodeURIComponent(version)}/builds/latest`);
-  const app = data.downloads?.application;
-  if (!data.build || !app?.name) return null;
-  return { build: data.build, jarName: app.name, sha256: app.sha256 };
+  const key = `${core}-${version}`;
+  const cached = readCache<BuildInfo>('builds', key, BUILD_TTL);
+  if (cached) return cached;
+  try {
+    const body = await fetchJson<V3BuildResponse>(
+      `${BASE}/v3/projects/${core}/versions/${encodeURIComponent(version)}/builds/latest`
+    );
+    const info = normalizeBuild(body);
+    if (!info) return null;
+    writeCache('builds', key, info);
+    return info;
+  } catch (e) {
+    const stale = readCache<BuildInfo>('builds', key, null);
+    if (stale) {
+      warn(`API 不可用，使用缓存的构建信息（${core} ${version}，可能不是最新）`);
+      return stale;
+    }
+    throw e;
+  }
 }
 
-export function downloadUrl(core: Core, version: string, build: number, jarName: string): string {
-  return `${BASE}/projects/${core}/versions/${encodeURIComponent(version)}/builds/${build}/downloads/${encodeURIComponent(jarName)}`;
+/** v3 的 downloads 是映射 {名称: {url, checksums}}"；优先 server:default，其次 server，最后第一个 */
+function normalizeBuild(body: V3BuildResponse): BuildInfo | null {
+  const id = body.id;
+  const downloads = body.downloads ?? {};
+  const entries = Object.entries(downloads);
+  if (typeof id !== 'number' || entries.length === 0) return null;
+  const pick =
+    entries.find(([k]) => k.includes('server') && k.includes('default')) ??
+    entries.find(([k]) => k.includes('server')) ??
+    entries[0];
+  const [name, d] = pick;
+  if (!d?.url) return null;
+  return {
+    build: id,
+    jarName: d.name ?? name,
+    sha256: d.checksums?.sha256,
+    downloadUrl: d.url,
+    channel: body.channel,
+    size: d.size,
+  };
 }
+
+/* ---------- 下载 ---------- */
 
 export interface DownloadOptions {
   sha256?: string;
@@ -100,7 +211,37 @@ export async function downloadJar(url: string, dest: string, opts: DownloadOptio
   fs.renameSync(part, dest);
 }
 
-/** 给 fetchVersions 排序用的版本比较（1.20.1 > 1.20.10 > 1.21） */
+/**
+ * 下载（或复用缓存）server.jar 到实例目录。
+ * 缓存策略：按 core-version-build 落 ~/.mcsdev/cache/jars/，
+ * 同版本的多个实例共享一份，sha256 校验通过则直接复制。
+ */
+export async function downloadServerJar(
+  core: Core,
+  version: string,
+  build: BuildInfo,
+  dest: string,
+  opts: DownloadOptions = {}
+): Promise<void> {
+  ensureDir(path.dirname(dest));
+  const cacheDir = path.join(mcsdevHome(), 'cache', 'jars');
+  ensureDir(cacheDir);
+  const cached = path.join(cacheDir, `${core}-${version}-${build.build}.jar`);
+
+  if (exists(cached)) {
+    if (!build.sha256 || sha256OfFile(cached) === build.sha256.toLowerCase()) {
+      info(`复用缓存 jar：${path.basename(cached)}`);
+      atomicCopy(cached, dest);
+      return;
+    }
+    warn('缓存 jar 校验失败，重新下载');
+    fs.rmSync(cached, { force: true });
+  }
+  await downloadJar(build.downloadUrl, cached, { sha256: build.sha256, onProgress: opts.onProgress });
+  atomicCopy(cached, dest);
+}
+
+/** 给版本列表排序用（1.20.1 < 1.20.10 < 1.21） */
 export function compareVersions(a: string, b: string): number {
   const pa = a.split('.').map((x) => parseInt(x, 10) || 0);
   const pb = b.split('.').map((x) => parseInt(x, 10) || 0);

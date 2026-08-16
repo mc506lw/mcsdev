@@ -8,6 +8,27 @@ import { runCmd } from './commands/run';
 import { lsCmd } from './commands/ls';
 import { startCmd, stopCmd, restartCmd, logsCmd, rebuildCmd, resetCmd } from './commands/lifecycle';
 import { error } from './util/log';
+import { getActiveStop } from './server';
+
+/**
+ * 全局 Ctrl+C / 终止信号：任何提示、下载、等待场景下都能可靠退出。
+ * 前台有正在托管的服务器时，先优雅停止（发送 stop 并等待保存世界），再退出。
+ */
+let signalHandling = false;
+function handleSignal(code: number): void {
+  if (signalHandling) return;
+  signalHandling = true;
+  const stop = getActiveStop();
+  if (stop) {
+    void stop()
+      .catch(() => undefined)
+      .finally(() => process.exit(code));
+  } else {
+    process.exit(code);
+  }
+}
+process.on('SIGINT', () => handleSignal(130));
+process.on('SIGTERM', () => handleSignal(143));
 
 const program = new Command();
 program

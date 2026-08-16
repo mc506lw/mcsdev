@@ -202,7 +202,7 @@ mcsdev java install <version>   # 可选，v0.2：下载 Temurin 等发行版
 mcsdev new
   1. 名称 / ID        → papertest、foliatest、my-plugin-1.20.4 ...
   2. 核心             → paper（默认）/ folia
-  3. 版本             → 从 Paper / Folia Downloads API 拉取可用版本列表，交互选择
+  3. 版本             → 从 Fill Downloads API v3（https://fill.papermc.io，v2 已下线）拉取可用版本列表，交互选择；版本列表 / 构建信息 / server.jar 均有本地缓存（`~/.mcsdev/cache/`，jar 按 core-version-build 复用）
   4. 使用全局配置？    → 是：跳过；否：逐个问世界类型 / 维度 / online-mode / 端口 / 内存
   5. 创建             → 下载 server.jar → 生成 eula / server.properties → 注册到 instances.json
 ```

@@ -5,7 +5,7 @@ import { CORES, compareVersions, fetchVersions, Core } from '../paper';
 import { getInstance, InstanceMeta } from '../registry';
 import { error, hint, ok, step, warn } from '../util/log';
 import { ensureDir, exists, mcsdevHome } from '../util/fsx';
-import { confirm, endProgress, progress, select, text, Choice } from '../ui/prompts';
+import { confirm, endProgress, multiselect, progress, select, text, Choice } from '../ui/prompts';
 
 export interface NewOptions {
   name?: string;
@@ -79,18 +79,29 @@ export async function newCmd(opts: NewOptions = {}): Promise<InstanceMeta | unde
   let overrides: InstanceMeta['overrides'] | undefined;
   if (!useGlobal) {
     step('逐个确认服务器配置（可回车用默认）：');
+    const worldType = await select<'normal' | 'flat' | 'void'>(
+      '主世界类型',
+      [
+        { value: 'normal', label: '普通（默认地形）' },
+        { value: 'flat', label: '超平坦' },
+        { value: 'void', label: '虚空（空世界，适合红石/机械测试）' },
+      ],
+      { initial: cfg.prefs.worldType }
+    );
+    const dims = await multiselect('启用世界（勾选要生成的地狱/末地）', [
+      { value: 'nether', label: '地狱（下界，allow-nether）' },
+      { value: 'end', label: '末地（需插件/数据包才能真正禁用）' },
+    ], {
+      initial: [
+        ...(cfg.prefs.allowNether ? (['nether'] as const) : []),
+        ...(cfg.prefs.allowEnd ? (['end'] as const) : []),
+      ],
+    });
     overrides = {
-      worldType: await select<'normal' | 'flat'>(
-        '世界类型',
-        [
-          { value: 'normal', label: '普通' },
-          { value: 'flat', label: '超平坦' },
-        ],
-        { initial: cfg.prefs.worldType }
-      ),
-      allowNether: await confirm('启用地狱？', cfg.prefs.allowNether),
-      allowEnd: await confirm('启用末地？', cfg.prefs.allowEnd),
-      onlineMode: !(await confirm('离线登录（online-mode=false，仅限本地测试）？', !cfg.prefs.onlineMode)),
+      worldType,
+      allowNether: dims.includes('nether'),
+      allowEnd: dims.includes('end'),
+      onlineMode: !(await confirm('关闭正版验证（online-mode=false）？本地测试无需正版账号', !cfg.prefs.onlineMode)),
       memory: await text('内存分配', {
         initial: cfg.prefs.memory,
         validate: (v) => (/^\d+[mMgG]$/.test(v) ? null : '如 2G / 1024M'),

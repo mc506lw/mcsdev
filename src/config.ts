@@ -4,7 +4,7 @@ import { mcsdevHome, readJson, writeJson } from './util/fsx';
 /** 服务器偏好（全局默认 → 实例覆盖，见 DESIGN.md §4） */
 export interface Prefs {
   onlineMode: boolean;
-  worldType: 'normal' | 'flat';
+  worldType: 'normal' | 'flat' | 'void'; // 主世界类型：普通 / 超平坦 / 虚空
   allowNether: boolean;
   allowEnd: boolean;
   motd: string;

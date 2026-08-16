@@ -133,6 +133,109 @@ export async function select<T>(msg: string, choices: Choice<T>[], opts: { initi
   return choices[cur].value;
 }
 
+/**
+ * 多选（复选框）：TTY 下 ↑/↓ 移动 + Space 勾选 + 回车确认；
+ * 非 TTY 下输入以逗号/空格分隔的编号（回车 = 用默认选中项）。
+ */
+export async function multiselect<T>(msg: string, choices: Choice<T>[], opts: { initial?: T[] } = {}): Promise<T[]> {
+  if (choices.length === 0) throw new Error('没有可选项');
+  const initial = (opts.initial ?? [])
+    .map((v) => String(v))
+    .filter((v) => choices.some((c) => String(c.value) === v));
+  const sel = new Set<string>(initial);
+  let cur = 0;
+
+  // Promise 句柄（同 select）：TTY 分支异步 resolve
+  let resolveSelect!: (v: T[]) => void;
+  const promise = new Promise<T[]>((r) => {
+    resolveSelect = r;
+  });
+
+  if (process.stdin.isTTY) {
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding('utf8');
+
+    // 块级重绘（同 select）：问题行 + 选项行
+    const blockHeight = choices.length + 1;
+    let first = true;
+    const clearDown = (): void => {
+      readline.cursorTo(process.stdout, 0);
+      readline.clearScreenDown(process.stdout);
+    };
+    const toTop = (): void => {
+      readline.cursorTo(process.stdout, 0);
+      readline.moveCursor(process.stdout, 0, -blockHeight);
+    };
+    const render = (): void => {
+      if (!first) clearDown();
+      first = false;
+      process.stdout.write(pc.cyan('? ') + msg + pc.dim('（↑/↓ 移动，Space 勾选，回车确认）') + '\n');
+      choices.forEach((c, i) => {
+        const checked = sel.has(String(c.value));
+        const mark = i === cur ? pc.green('❯') : '  ';
+        const box = checked ? pc.green('[x]') : pc.dim('[ ]');
+        const label = i === cur ? pc.green(c.label) : checked ? c.label : pc.dim(c.label);
+        process.stdout.write(mark + ' ' + box + ' ' + label + '\n');
+      });
+      toTop();
+    };
+    const finish = (values: T[]): void => {
+      clearDown();
+      const labels = choices
+        .filter((c) => values.map(String).includes(String(c.value)))
+        .map((c) => c.label);
+      process.stdout.write(pc.cyan('? ') + msg + pc.dim(' → ') + pc.green(labels.join('、') || '无') + '\n');
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+      process.stdin.removeListener('data', onData);
+      resolveSelect(values);
+    };
+
+    render();
+    const onData = (key: string): void => {
+      if (key === '\u0003') {
+        process.stdin.setRawMode(false);
+        process.stdin.pause();
+        process.stdin.removeListener('data', onData);
+        process.exit(130);
+      }
+      if (key === '\r' || key === '\n') {
+        const values = choices.filter((c) => sel.has(String(c.value))).map((c) => c.value);
+        finish(values);
+      } else if (key === '\u001b[A' || key === 'k') {
+        cur = (cur - 1 + choices.length) % choices.length;
+        render();
+      } else if (key === '\u001b[B' || key === 'j') {
+        cur = (cur + 1) % choices.length;
+        render();
+      } else if (key === ' ') {
+        const v = String(choices[cur].value);
+        if (sel.has(v)) sel.delete(v);
+        else sel.add(v);
+        render();
+      }
+    };
+    process.stdin.on('data', onData);
+    return promise as Promise<T[]>;
+  }
+
+  // 非 TTY：编号输入（逗号/空格分隔；空回车 = 默认选中项）
+  console.log(pc.cyan('? ') + msg + pc.dim('（输入编号，逗号分隔；回车用默认）'));
+  choices.forEach((c, i) => {
+    const checked = sel.has(String(c.value));
+    console.log(`  ${pc.dim(i + 1 + '.')} ${checked ? pc.green('[x]') : pc.dim('[ ]')} ${c.label}`);
+  });
+  const ans = await askLine('  > ');
+  const nums = ans.split(/[,，\s]+/).map((x) => parseInt(x, 10)).filter((n) => !Number.isNaN(n));
+  if (nums.length > 0) {
+    return nums
+      .filter((n) => n >= 1 && n <= choices.length)
+      .map((n) => choices[n - 1].value);
+  }
+  return choices.filter((c) => sel.has(String(c.value))).map((c) => c.value);
+}
+
 export async function confirm(msg: string, initial = false): Promise<boolean> {
   const hintTag = initial ? 'Y/n' : 'y/N';
   const ans = await askLine(pc.cyan('? ') + msg + pc.dim(` [${hintTag}] `));
