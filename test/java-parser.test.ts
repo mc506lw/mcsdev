@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseMajor, parseJavaProps } from '../src/java';
+import { parseMajor, parseJavaProps, isJdkLikeDir } from '../src/java';
 
 test('parseMajor: 1.8.0_202 → 8', () => {
   assert.equal(parseMajor('1.8.0_202'), 8);
@@ -46,4 +46,16 @@ test('parseJavaProps: 解析完整属性', () => {
 test('parseJavaProps: 兼容 "java version" 输出', () => {
   const p = parseJavaProps('java version "1.8.0_202" 2019-10-15\nJava(TM) SE Runtime Environment');
   assert.equal(p.version, '1.8.0_202');
+});
+
+test('isJdkLikeDir: 识别常见 JDK 目录名', () => {
+  assert.equal(isJdkLikeDir('zulu17'), true);
+  assert.equal(isJdkLikeDir('jdk26'), true);
+  assert.equal(isJdkLikeDir('temurin-21.0.1'), true);
+  assert.equal(isJdkLikeDir('corretto-17'), true);
+  assert.equal(isJdkLikeDir('openjdk-21'), true);
+  // 非 JDK 目录不应误判（兄弟目录扩展不会扫到它们）
+  assert.equal(isJdkLikeDir('gradle-9.5.1'), false);
+  assert.equal(isJdkLikeDir('maven-3.9.16'), false);
+  assert.equal(isJdkLikeDir('node_modules'), false);
 });

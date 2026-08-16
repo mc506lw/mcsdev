@@ -32,6 +32,11 @@ export interface JavaInfo {
 const isWin = process.platform === 'win32';
 const BIN_NAME = isWin ? 'java.exe' : 'java';
 
+/** 目录名看起来像 JDK 安装（用于"兄弟目录扩展"：D:\java\zulu17 → 补扫 D:\java） */
+export function isJdkLikeDir(name: string): boolean {
+  return /jdk|jre|java|zulu|temurin|corretto|openjdk|liberica|graalvm|jbr/i.test(name);
+}
+
 /* ---------- 候选目录（PCL2 CandidateFolders 移植 + POSIX 常规目录） ---------- */
 
 function candidateFolders(): string[] {
@@ -96,13 +101,42 @@ function candidateFolders(): string[] {
       const jh = val.trim().replace(/^"|"$/g, '');
       add(jh);
       add(path.join(jh, 'jre'));
+      // 兄弟目录扩展：JAVA_HOME=D:\java\zulu17 → 也扫 D:\java（用户常把一组 JDK 放在一起）
+      if (isJdkLikeDir(path.basename(jh))) add(path.dirname(jh));
     }
   }
   // PATH 中含 java 的条目
   for (const entry of (process.env.PATH || '').split(path.delimiter)) {
-    if (/java/i.test(entry)) add(entry);
+    if (!/java/i.test(entry)) continue;
+    add(entry);
+    if (isJdkLikeDir(path.basename(entry))) add(path.dirname(entry));
+    else if (/bin$/i.test(entry) && isJdkLikeDir(path.basename(path.dirname(entry)))) add(path.dirname(path.dirname(entry)));
   }
   return [...dirs].filter((d) => d !== path.parse(d).root);
+}
+
+/** Windows 注册表扫描：JavaSoft / Eclipse Adoptium / Microsoft JavaSoft 的 JavaHome、InstallPath */
+async function registryJavaHomes(): Promise<string[]> {
+  if (!isWin) return [];
+  const keys = [
+    'HKLM\\SOFTWARE\\JavaSoft',
+    'HKLM\\SOFTWARE\\Eclipse Adoptium',
+    'HKLM\\SOFTWARE\\Microsoft\\JavaSoft',
+    'HKCU\\SOFTWARE\\JavaSoft',
+  ];
+  const homes = new Set<string>();
+  for (const key of keys) {
+    for (const args of [['/s'], ['/s', '/reg:32']]) {
+      const res = await runCmd('reg', ['query', key, ...args]);
+      for (const line of res.output.split(/\r?\n/)) {
+        const m = line.match(/^\s*([A-Za-z0-9_.]+)\s+REG_SZ\s+(.+?)\s*$/);
+        if (!m || !/^(JavaHome|InstallPath|HomePath|Path)$/i.test(m[1])) continue;
+        const p = m[2].trim().replace(/^"|"$/g, '').replace(/\\+$/, '');
+        if (p.length > 2) homes.add(p);
+      }
+    }
+  }
+  return [...homes];
 }
 
 function isCandidateFolder(dir: string): boolean {
@@ -220,6 +254,14 @@ export interface ScanOptions {
 
 /** 全量扫描：候选目录递归找 java 二进制 → 并发探测 → 排序 → 落盘 java.json */
 export async function scanJava(opts: ScanOptions = {}): Promise<JavaInfo[]> {
+  // 候选来源：标准目录 + 注册表 + 动态"兄弟目录扩展"
+  const folders = new Set<string>(candidateFolders());
+  for (const h of await registryJavaHomes()) {
+    const direct = path.join(h, 'bin', BIN_NAME);
+    if (exists(direct)) folders.add(path.dirname(direct));
+    folders.add(h);
+  }
+
   const bins = new Map<string, string>(); // realpath(dirname).toLowerCase() -> bin 路径
   const putBin = (bin: string): void => {
     const dir = path.dirname(bin);
@@ -231,12 +273,25 @@ export async function scanJava(opts: ScanOptions = {}): Promise<JavaInfo[]> {
     }
   };
 
-  for (const folder of candidateFolders()) {
-    for (const f of listFilesRecursive(folder, 5)) {
-      if (path.basename(f).toLowerCase() !== BIN_NAME.toLowerCase()) continue;
-      putBin(f);
+  // 多轮扫描：一旦发现 <某JDK>/bin/java.exe，就把它上一级目录也纳入候选，
+  // 从而覆盖 D:\java\zulu17 → 补齐 zulu8/zulu21/jdk26 这类"一组 JDK"的布局
+  for (let pass = 0; pass < 3; pass++) {
+    let added = false;
+    for (const folder of [...folders]) {
+      for (const f of listFilesRecursive(folder, 5)) {
+        if (path.basename(f).toLowerCase() !== BIN_NAME.toLowerCase()) continue;
+        putBin(f);
+        const dir = path.dirname(f);
+        const parent = path.dirname(dir);
+        if (isJdkLikeDir(path.basename(dir)) && !folders.has(parent)) {
+          folders.add(parent);
+          added = true;
+        }
+      }
     }
+    if (!added) break;
   }
+  // PATH 直接命中（含 system32 的 java 存根会被 isSpecialPath 排除）
   for (const entry of (process.env.PATH || '').split(path.delimiter)) {
     if (!entry) continue;
     const cand = path.join(entry, BIN_NAME);

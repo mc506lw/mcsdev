@@ -63,7 +63,8 @@ export function listFilesRecursive(dir: string, maxDepth = 4): string[] {
       return;
     }
     for (const e of entries) {
-      if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+      // 注意：不跳过 "." 开头的目录 —— .jdks / .sdkman 等正是 JDK 的常见位置（PCL2 同样会遍历）
+      if (e.name === 'node_modules') continue;
       const full = path.join(d, e.name);
       if (e.isDirectory()) walk(full, depth + 1);
       else out.push(full);
