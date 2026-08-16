@@ -47,61 +47,77 @@ export async function select<T>(msg: string, choices: Choice<T>[], opts: { initi
   const initialIdx = opts.initial === undefined ? -1 : choices.findIndex((c) => c.value === opts.initial);
   let cur = initialIdx >= 0 ? initialIdx : 0;
 
-  const printList = (): void => {
-    process.stdout.write(pc.cyan('? ') + msg + '（↑/↓ 或数字选择，回车确认）' + '\n');
-    choices.forEach((c, i) => {
-      const mark = i === cur ? pc.green('❯ ') : '  ';
-      const label = i === cur ? pc.green(c.label) : pc.dim(c.label);
-      const hintStr = c.hint ? pc.dim('  — ' + c.hint) : '';
-      process.stdout.write(mark + label + hintStr + '\n');
-    });
-    readline.cursorTo(process.stdout, 0);
-    readline.moveCursor(process.stdout, 0, -(choices.length));
-  };
-
-  const clearList = (): void => {
-    if (!process.stdout.isTTY) return;
-    readline.cursorTo(process.stdout, 0);
-    readline.moveCursor(process.stdout, 0, choices.length);
-    readline.clearScreenDown(process.stdout);
-  };
+  // Promise 句柄：TTY 分支在键盘事件里异步 resolve；非 TTY 分支直接 return
+  let resolveSelect!: (v: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolveSelect = r;
+  });
 
   if (process.stdin.isTTY) {
     process.stdin.setRawMode(true);
     process.stdin.resume();
     process.stdin.setEncoding('utf8');
-    printList();
-    return new Promise<T>((resolve) => {
-      const cleanup = (): void => {
-        process.stdin.removeListener('data', onData);
+
+    // 块级重绘：问题行 + 选项行共 choices.length+1 行。
+    // 每次渲染先把光标回到块顶 → 清掉旧块 → 重画 → 再回到块顶；
+    // 旧实现只回退 choices.length 行，导致每次按键问题行下行错位、越堆越多。
+    const blockHeight = choices.length + 1;
+    let first = true;
+    const clearDown = (): void => {
+      readline.cursorTo(process.stdout, 0);
+      readline.clearScreenDown(process.stdout);
+    };
+    const toTop = (): void => {
+      readline.cursorTo(process.stdout, 0);
+      readline.moveCursor(process.stdout, 0, -blockHeight);
+    };
+    const render = (): void => {
+      if (!first) clearDown();
+      first = false;
+      process.stdout.write(pc.cyan('? ') + msg + pc.dim('（↑/↓ 或数字选择，回车确认）') + '\n');
+      choices.forEach((c, i) => {
+        const mark = i === cur ? pc.green('❯ ') : '  ';
+        const label = i === cur ? pc.green(c.label) : pc.dim(c.label);
+        const hintStr = c.hint ? pc.dim('  — ' + c.hint) : '';
+        process.stdout.write(mark + label + hintStr + '\n');
+      });
+      toTop();
+    };
+    const finish = (value: T): void => {
+      clearDown();
+      const chosen = choices.find((c) => c.value === value);
+      process.stdout.write(pc.cyan('? ') + msg + pc.dim(' → ') + pc.green(chosen?.label ?? String(value)) + '\n');
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+      process.stdin.removeListener('data', onData);
+      resolveSelect(value);
+    };
+
+    render();
+    const onData = (key: string): void => {
+      if (key === '\u0003') {
         process.stdin.setRawMode(false);
         process.stdin.pause();
-        clearList();
-      };
-      const onData = (key: string): void => {
-        if (key === '\u0003') {
-          cleanup();
-          process.exit(130);
+        process.stdin.removeListener('data', onData);
+        process.exit(130);
+      }
+      if (key === '\r' || key === '\n') {
+        finish(choices[cur].value);
+      } else if (key === '\u001b[A' || key === 'k') {
+        cur = (cur - 1 + choices.length) % choices.length;
+        render();
+      } else if (key === '\u001b[B' || key === 'j') {
+        cur = (cur + 1) % choices.length;
+        render();
+      } else if (/^[0-9]$/.test(key)) {
+        const n = parseInt(key, 10);
+        if (n >= 1 && n <= choices.length) {
+          finish(choices[n - 1].value);
         }
-        if (key === '\r' || key === '\n') {
-          cleanup();
-          resolve(choices[cur].value);
-        } else if (key === '\u001b[A' || key === 'k') {
-          cur = (cur - 1 + choices.length) % choices.length;
-          printList();
-        } else if (key === '\u001b[B' || key === 'j') {
-          cur = (cur + 1) % choices.length;
-          printList();
-        } else if (/^[0-9]$/.test(key)) {
-          const n = parseInt(key, 10);
-          if (n >= 1 && n <= choices.length) {
-            cleanup();
-            resolve(choices[n - 1].value);
-          }
-        }
-      };
-      process.stdin.on('data', onData);
-    });
+      }
+    };
+    process.stdin.on('data', onData);
+    return promise;
   }
 
   // 非 TTY：编号选择
