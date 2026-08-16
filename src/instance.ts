@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { effectivePrefs, getConfig, Prefs } from './config';
+import { patchKeyValue, patchYamlValue } from './config-patch';
 import { Core, downloadServerJar, fetchLatestBuild } from './paper';
 import { addInstance, InstanceMeta, listInstances } from './registry';
 import { ensureDir, exists, isEmptyDir, writeJson } from './util/fsx';
@@ -16,6 +17,19 @@ const EULA = `#By changing the setting below to TRUE you are indicating your agr
 #本文件由 mcsdev 自动生成；仅用于本地开发测试，请阅读并遵守 Minecraft EULA。
 eula=true
 `;
+
+/**
+ * bukkit.yml 最小种子（首次启动前预写，让"禁用末地"从第一次启动就生效）。
+ * 其余键 Paper 启动时会自动补齐（版本自适配），我们绝不整文件覆盖。
+ * settings.allow-end 是 Bukkit 自 1.x 起稳定存在的键：false = 不生成/不加载末地。
+ */
+function bukkitSeed(prefs: Prefs): string {
+  return `# bukkit.yml — mcsdev 播种的最小配置；其余设置由服务器首次启动自动补齐（版本自适配）
+# 本行勿删：mcsdev rebuild 会按键级合并（保留服务器自己写入的其它配置）
+settings:
+  allow-end: ${prefs.allowEnd}
+`;
+}
 
 /** 生成 dev 友好的 server.properties（DESIGN.md §5.2 默认值） */
 export function buildServerProperties(prefs: Prefs, port: number): string {
@@ -72,9 +86,56 @@ export function buildServerProperties(prefs: Prefs, port: number): string {
     'require-resource-pack=false',
   ];
   if (!prefs.allowEnd) {
-    lines.push('# [mcsdev] allowEnd=false：原版 server.properties 无法禁用末地世界（1.20.x 限制），需用插件/数据包实现');
+    lines.push('# [mcsdev] allowEnd=false：原版 server.properties 无法禁用末地，真正生效靠 bukkit.yml 的 settings.allow-end=false');
   }
   return lines.join('\n') + '\n';
+}
+
+/** 二次替换：在服务器原生 server.properties 上做键级合并（保留版本特有键，只改我们管的键） */
+export function mergeServerProperties(prefs: Prefs, port: number, existing: string): string {
+  let text = existing;
+  const levelType = prefs.worldType === 'normal' ? 'minecraft:normal' : 'minecraft:flat';
+  const set = (k: string, v: string): void => {
+    text = patchKeyValue(text, k, v);
+  };
+  set('enable-command-block', 'true');
+  set('gamemode', 'survival');
+  set('difficulty', 'hard');
+  set('level-type', levelType);
+  if (prefs.worldType === 'void') {
+    set('generator-settings', '{"layers":[],"biome":"minecraft:the_void","structures":{"structures":{}}}');
+  }
+  set('allow-nether', prefs.allowNether ? 'true' : 'false');
+  set('spawn-protection', '0');
+  set('online-mode', prefs.onlineMode ? 'true' : 'false');
+  set('enforce-secure-profile', String(!prefs.onlineMode));
+  set('server-port', String(port));
+  set('motd', prefs.motd);
+  set('max-players', '2');
+  set('view-distance', String(prefs.viewDistance));
+  set('simulation-distance', String(prefs.viewDistance));
+  return text;
+}
+
+/** 写入/合并实例配置（二次替换）：server.properties 与 bukkit.yml 均按键级补丁，不删服务器原生键 */
+export function writeInstanceConfigs(prefs: Prefs, port: number, dir: string): void {
+  const propsFile = path.join(dir, 'server.properties');
+  const existingProps = exists(propsFile) ? fs.readFileSync(propsFile, 'utf8') : null;
+  fs.writeFileSync(
+    propsFile,
+    existingProps === null ? buildServerProperties(prefs, port) : mergeServerProperties(prefs, port, existingProps),
+    'utf8'
+  );
+
+  const bukkitFile = path.join(dir, 'bukkit.yml');
+  const existingBukkit = exists(bukkitFile) ? fs.readFileSync(bukkitFile, 'utf8') : null;
+  fs.writeFileSync(
+    bukkitFile,
+    existingBukkit === null
+      ? bukkitSeed(prefs)
+      : patchYamlValue(existingBukkit, 'allow-end', String(prefs.allowEnd), 'settings'),
+    'utf8'
+  );
 }
 
 /** 端口自动避让：从 port 起找第一个未被其他实例占用的端口 */
@@ -119,7 +180,7 @@ export async function createInstance(opts: CreateOptions): Promise<InstanceMeta>
   const port = allocatePort(prefs.port);
 
   fs.writeFileSync(path.join(dir, 'eula.txt'), EULA, 'utf8');
-  fs.writeFileSync(path.join(dir, 'server.properties'), buildServerProperties(prefs, port), 'utf8');
+  writeInstanceConfigs(prefs, port, dir);
 
   const meta: InstanceMeta = {
     name: opts.name,
@@ -136,12 +197,12 @@ export async function createInstance(opts: CreateOptions): Promise<InstanceMeta>
   return meta;
 }
 
-/** rebuild：从实例配置幂等重生成派生文件 */
+/** rebuild：二次替换 —— 把实例偏好按键级合并进现有配置（保留服务器/版本自己的键），首次则播种 */
 export function rebuildInstance(meta: InstanceMeta): void {
   const cfg = getConfig();
   const prefs = effectivePrefs(cfg, meta.overrides);
-  fs.writeFileSync(path.join(meta.dir, 'server.properties'), buildServerProperties(prefs, meta.port), 'utf8');
   fs.writeFileSync(path.join(meta.dir, 'eula.txt'), EULA, 'utf8');
+  writeInstanceConfigs(prefs, meta.port, meta.dir);
 }
 
 /** reset：清世界与日志，重生成派生配置（保留 plugins/server.jar） */
