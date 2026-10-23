@@ -1,13 +1,14 @@
 import * as path from 'path';
 import { getConfig, saveConfig } from '../config';
 import { listSavedJava, scanJava, validateJava } from '../java';
+import { addInstance, getInstance } from '../registry';
 import { error, hint, ok, warn, info } from '../util/log';
 import { exists } from '../util/fsx';
 import { endProgress, progress } from '../ui/prompts';
 import { printJavaTable } from './setup';
 
 /** `mcsdev java <scan|list|use|validate>`：JDK 环境管理（DESIGN.md §5.3） */
-export async function javaCmd(action: string, target?: string): Promise<void> {
+export async function javaCmd(action: string, target?: string, opts: { instance?: string } = {}): Promise<void> {
   switch (action) {
     case 'scan': {
       info('扫描 JDK…');
@@ -36,7 +37,7 @@ export async function javaCmd(action: string, target?: string): Promise<void> {
     }
     case 'use': {
       if (!target) {
-        error('用法：mcsdev java use <路径 | 列表索引>');
+        error('用法：mcsdev java use <路径 | 列表索引> [--instance <实例名>]');
         return;
       }
       const saved = listSavedJava();
@@ -59,10 +60,25 @@ export async function javaCmd(action: string, target?: string): Promise<void> {
         error(`JDK 无效或探测失败：${bin}`);
         return;
       }
+      // --instance：只给这个实例绑定 JDK，不动全局默认
+      if (opts.instance) {
+        const inst = getInstance(opts.instance);
+        if (!inst) {
+          error(`实例不存在：${opts.instance}`);
+          hint('先 mcsdev ls 看看有哪些实例');
+          return;
+        }
+        addInstance({ ...inst, javaBin: bin });
+        ok(`实例 ${inst.name} 已绑定 Java ${info.major}（${info.version}）：${bin}`);
+        hint('该实例下次启动时生效');
+        return;
+      }
+
       const cfg = getConfig();
       cfg.defaultJava = bin;
       saveConfig(cfg);
       ok(`默认 JDK 已设为 Java ${info.major}（${info.version}）：${bin}`);
+      hint('只改全局默认；要给某个实例单独绑定：mcsdev java use <x> --instance <实例名>');
       return;
     }
     case 'validate': {

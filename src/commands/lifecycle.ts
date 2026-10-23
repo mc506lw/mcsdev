@@ -1,9 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { findYml, parseYmlFile, resolveLink } from '../compose';
 import { resetInstance, rebuildInstance } from '../instance';
 import { getInstance, listInstances, InstanceMeta } from '../registry';
 import { runningPid, startServer, stopServerExternal } from '../server';
-import { error, ok, warn, hint } from '../util/log';
+import { error, ok, warn, hint, info } from '../util/log';
 import { exists } from '../util/fsx';
 import { confirm, select } from '../ui/prompts';
 
@@ -60,12 +61,60 @@ export async function restartCmd(arg?: string): Promise<void> {
   ok(`实例 ${inst.name} 已重启（日志：mcsdev logs ${inst.name}）`);
 }
 
+/** 解析出"要看哪个服务器的日志"：支持外部服务器目录与 mcsdev.yml 的 link */
+function resolveLogDir(arg?: string): { dir: string; label: string } | undefined {
+  // 1) 已注册实例优先（mcsdev logs test1）
+  if (arg && getInstance(arg)) return undefined; // 交给原来的实例路径
+
+  // 2) 参数直接是服务器目录
+  if (arg && /[\\/]/.test(arg)) {
+    const abs = path.resolve(arg);
+    if (exists(path.join(abs, 'logs', 'latest.log'))) return { dir: abs, label: path.basename(abs) };
+  }
+
+  // 3) 当前项目有 mcsdev.yml 且 link 指向目录
+  try {
+    const yml = findYml(process.cwd());
+    if (yml) {
+      const spec = parseYmlFile(yml);
+      if (spec.link) {
+        const r = resolveLink(spec.link, spec.dir);
+        if (!('error' in r) && exists(path.join(r.dir, 'logs', 'latest.log'))) {
+          return { dir: r.dir, label: r.name };
+        }
+      }
+    }
+  } catch {
+    /* 配置坏了就走实例路径 */
+  }
+  return undefined;
+}
+
 export async function logsCmd(arg?: string, opts: { follow?: boolean } = {}): Promise<void> {
+  // 外部服务器（link 指向目录）：日志就在 <dir>/logs/latest.log，零成本可看
+  const external = resolveLogDir(arg);
+  if (external) {
+    const f = path.join(external.dir, 'logs', 'latest.log');
+    info(`看的是 ${external.label}（${external.dir}）`);
+    await tailFile(f, opts.follow);
+    return;
+  }
+
   const inst = await resolveInstance(arg);
   if (!inst) return;
+  info(`看的是 ${inst.name}（${inst.dir}）`);
   const f = path.join(inst.dir, 'logs', 'latest.log');
   if (!exists(f)) {
     warn(`还没有日志文件（实例 ${inst.name} 尚未运行过）`);
+    return;
+  }
+  await tailFile(f, opts.follow);
+}
+
+/** tail 一个日志文件（从最后 ~20KB 开始；follow 时轮询追加） */
+async function tailFile(f: string, follow?: boolean): Promise<void> {
+  if (!exists(f)) {
+    warn(`还没有日志文件：${f}`);
     return;
   }
 
@@ -84,7 +133,7 @@ export async function logsCmd(arg?: string, opts: { follow?: boolean } = {}): Pr
   let pos = Math.max(0, fs.statSync(f).size - 20000); // 最近 ~20KB
   pos = show(pos);
 
-  if (opts.follow) {
+  if (follow) {
     await new Promise<void>((resolve) => {
       const timer = setInterval(() => {
         try {
