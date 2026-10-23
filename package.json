@@ -1,6 +1,6 @@
 {
   "name": "mcsdev",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Terminal test-server environment for Minecraft plugin developers — declarative dev loop (build → deploy → restart) for Paper / Folia / Leaf",
   "license": "MIT",
   "bin": {

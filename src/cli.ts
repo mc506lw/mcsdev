@@ -40,7 +40,7 @@ process.on('SIGTERM', () => handleSignal(143));
 const program = new Command();
 program
   .name('mcsdev')
-  .description('Minecraft Server Dev — 终端里的插件开发者测试服环境（v0.1 原型）')
+  .description('Minecraft Server Dev — 终端里的插件开发者测试服环境')
   .version(pkg.version, '-V, --version');
 
 const wrap =
@@ -150,7 +150,7 @@ program
 
 program
   .command('exec')
-  .description('通过 RCON 往运行中的服务器发一条命令（比整服重启便宜）')
+  .description('给运行中的服务器发命令：dev 会话内走 stdin，否则走 RCON')
   .argument('<command...>', '命令（不要带前导 /）')
   .action(wrap(execCmd));
 
@@ -186,7 +186,7 @@ program.addHelpText(
     dev       ★ 日常用这个：watch 构建产物，自动部署 + 重启
     deploy    只部署一次就退出（脚本化用）
     prune     清掉配置里已删除条目的残留 jar（不碰手工放的插件）
-    exec      通过 RCON 往运行中的服务器发命令（reload / say / plugins…）
+    exec      给运行中的服务器发命令（dev 会话内走 stdin，否则 RCON）
 
   实例管理（不用 mcsdev.yml 时用这套）
     setup     首次环境配置（JDK + 服务器根路径）

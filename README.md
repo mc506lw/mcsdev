@@ -16,7 +16,7 @@ mcsdev dev        # 盯着构建产物，新 jar 自动上服、自动重启、�
 
 单机、单用户、终端优先。不是 Web 面板，不是生产运维工具。
 
-> ⚠️ **现状**：v0.1 原型，**只能从源码运行**。npm 上的 `mcsdev` 目前是零功能的名称占位包（详见 [已知限制](#已知限制--known-limitations)）。
+> **现状**：v0.1，已发布到 npm —— `npx mcsdev --help` 可以直接跑。功能仍在快速迭代，接口可能变（见 [已知限制](#已知限制--known-limitations)）。
 
 ## 目录 / Table of contents
 
@@ -55,20 +55,35 @@ mcsdev dev        # 盯着构建产物，新 jar 自动上服、自动重启、�
 - **Node.js 20+**（开发机为 22.x）
 - **64 位 JDK**：任意发行版（Adoptium / Zulu / Corretto / Microsoft 均可），版本要满足你用的 MC 版本（如 Paper 1.21.x 需要 Java 21+）
 
-### 1. 拿到可运行的程序
+### 1. 安装
 
-npm 上的包还是占位包，**先按源码跑**：
+不用装，直接跑：
+
+```bash
+npx mcsdev --help
+```
+
+或者装到全局：
+
+```bash
+npm i -g mcsdev
+mcsdev --help
+```
+
+<details>
+<summary>从源码跑（想改代码 / 想跑最新未发布的提交）</summary>
 
 ```bash
 git clone https://github.com/mc506lw/mcsdev.git
 cd mcsdev
 npm install
 npm run build            # tsc → dist/
-
-npm link                 # 可选：把 mcsdev 装进 PATH，后面就能直接敲 mcsdev
+npm link                 # 可选：把 mcsdev 装进 PATH
 ```
 
 不 `npm link` 也可以，把下面的 `mcsdev` 换成 `node <mcsdev仓库目录>/dist/cli.js`。
+
+</details>
 
 ### 2. 在插件项目里生成配置
 
@@ -323,7 +338,7 @@ sha256 判等：内容相同就跳过（不看 mtime）
 
 写在这里的都是真实存在的边界，不是「即将支持」的场面话：
 
-- **npm 上仍是占位包**：`mcsdev@0.0.1` 不含任何功能，只用来占住这个名字（npm 不支持预订包名，只能先发布）。首个功能版本会原地替换，包名不变。现在请从源码运行。
+- **v0.1，接口可能变**：`mcsdev.yml` 的字段和命令参数还在迭代，升级前看 CHANGELOG / release notes。旧的 `0.0.1` 是纯占位包，请用 `0.1.0` 及以上。
 - **`config:` / `onStart:` 字段未实现**：`mcsdev.yml` 里写了会**直接报错**，不会静默假装生效。
 - **镜像 / 容器分层未做**：每个实例是一份完整的服务器本体，多实例之间不共享那 ~50MB 的 jar 和库。
 - **首次建实例需要联网**：要访问 `fill.papermc.io` 下载对应版本（约 50MB / 版本）；之后命中缓存不再下载。`link` 模式不需要。
