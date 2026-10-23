@@ -1,21 +1,49 @@
 {
   "name": "mcsdev",
-  "version": "0.1.0-dev",
-  "description": "Minecraft Server Dev — terminal test-server environment for Paper/Folia plugin developers (v0.1 prototype)",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Terminal test-server environment for Minecraft plugin developers — declarative dev loop (build → deploy → restart) for Paper / Folia / Leaf",
   "license": "MIT",
   "bin": {
     "mcsdev": "dist/cli.js"
   },
+  "files": [
+    "dist/",
+    "assets/logo.svg",
+    "assets/logo-mark.svg"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/cli.js",
     "dev": "tsx src/cli.ts",
-    "test": "node --import tsx --test test/*.test.ts"
+    "test": "node --import tsx --test test/*.test.ts",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "keywords": [
+    "minecraft",
+    "minecraft-server",
+    "paper",
+    "folia",
+    "leaf",
+    "bukkit",
+    "spigot",
+    "plugin",
+    "plugin-development",
+    "dev-server",
+    "hot-deploy",
+    "cli"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mc506lw/mcsdev.git"
+  },
+  "homepage": "https://github.com/mc506lw/mcsdev#readme",
+  "bugs": {
+    "url": "https://github.com/mc506lw/mcsdev/issues"
   },
   "dependencies": {
     "commander": "^12.1.0",
-    "picocolors": "^1.1.1"
+    "picocolors": "^1.1.1",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
@@ -23,6 +51,6 @@
     "typescript": "^5.7.2"
   },
   "engines": {
-    "node": ">=18.17"
+    "node": ">=20"
   }
 }
